@@ -15,10 +15,8 @@ class AccountController extends Controller
         $accounts = Account::with('platform')->get();
         $platforms = Platform::all();
 
-    return view('accounts.index', compact('accounts', 'platform', 'platforms'));
-
+        return view('accounts.index', compact('accounts', 'platforms'));
     }
-
 
     public function create()
     {
@@ -30,7 +28,7 @@ class AccountController extends Controller
     {
         $data = $request->validate([
             'platform_id' => 'required|exists:platforms,id',
-            'email' => 'required|string|email|max:150|unique:accounts,email',
+            'email' => 'required|string|email|max:150|unique:accounts,email,NULL,id,platform_id,' . $request->platform_id,
             'password' => 'required|string|min:6',
             'notes' => 'nullable|string|max:255',
         ]);
@@ -43,8 +41,23 @@ class AccountController extends Controller
         // Crear la cuenta
         $account = Account::create($data);
 
-        // Crear automáticamente 5 perfiles desocupados
-        for ($i = 1; $i <= 5; $i++) {
+        /*
+        |--------------------------------------------------------------------------
+        | DEFINIR CANTIDAD DE PERFILES POR NOMBRE DE PLATAFORMA
+        |--------------------------------------------------------------------------
+        */
+        $platformName = strtolower($account->platform->name);
+
+        $profilesCount = match ($platformName) {
+            'netflix' => 5,
+            'disney', 'disney+', 'disney plus', 'disney plos' => 7,
+            'prime', 'amazon prime', 'prime video', 'amazon' => 6,
+            'hbo', 'hbo max' => 5,
+            default => 6,
+        };
+
+        // Crear perfiles automáticamente
+        for ($i = 1; $i <= $profilesCount; $i++) {
             Profile::create([
                 'account_id' => $account->id,
                 'name' => "Perfil $i",
@@ -56,15 +69,14 @@ class AccountController extends Controller
         }
 
         if ($request->platform_id) {
-            return redirect()->route('platforms.accounts', $request->platform_id)
+            return redirect()
+                ->route('platforms.accounts', $request->platform_id)
                 ->with('success', 'Cuenta y perfiles creados correctamente.');
         }
 
-        // Si no, va al index normal
-        return redirect()->route('accounts.index')
+        return redirect()
+            ->route('accounts.index')
             ->with('success', 'Cuenta y perfiles creados correctamente.');
-
-
     }
 
     public function show(Account $account)
@@ -90,12 +102,16 @@ class AccountController extends Controller
 
         if (!empty($data['password'])) {
             $data['password_encrypted'] = Hash::make($data['password']);
+            $data['password_plain'] = $data['password'];
         }
+
         unset($data['password']);
 
         $account->update($data);
 
-        return redirect()->route('accounts.show', $account)->with('success', 'Cuenta actualizada.');
+        return redirect()
+            ->route('accounts.show', $account)
+            ->with('success', 'Cuenta actualizada.');
     }
 
     public function destroy(Account $account)
@@ -107,7 +123,6 @@ class AccountController extends Controller
     public function byPlatform(Platform $platform)
     {
         $accounts = $platform->accounts()->with('platform')->get();
-
         return view('accounts.index', compact('accounts', 'platform'));
     }
 
@@ -117,16 +132,10 @@ class AccountController extends Controller
             'newPassword' => 'required|min:6|confirmed',
         ]);
 
-        // Guardar la contraseña en texto plano
         $account->password_plain = $request->newPassword;
-
-        // Guardar la contraseña encriptada
         $account->password_encrypted = Hash::make($request->newPassword);
-
         $account->save();
 
         return redirect()->back()->with('success', 'Contraseña actualizada correctamente.');
     }
-
-
 }
