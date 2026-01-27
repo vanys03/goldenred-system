@@ -67,83 +67,83 @@ class VentasController extends Controller
     }
 
 
-  public function store(Request $request)
-{
-    $request->validate([
-        'cliente_id' => 'required|exists:clientes,id',
-        'meses' => 'required|integer|min:1|max:12',
-        'descuento' => 'nullable|numeric|min:0',
-        'recargo_domicilio' => 'nullable|numeric|min:0',
-        'tipo_pago' => 'required|in:Efectivo,Transferencia',
-    ]);
+    public function store(Request $request)
+    {
+        $request->validate([
+            'cliente_id' => 'required|exists:clientes,id',
+            'meses' => 'required|integer|min:1|max:12',
+            'descuento' => 'nullable|numeric|min:0',
+            'recargo_domicilio' => 'nullable|numeric|min:0',
+            'tipo_pago' => 'required|in:Efectivo,Transferencia',
+        ]);
 
-    $cliente = Cliente::with('paquete')->findOrFail($request->cliente_id);
+        $cliente = Cliente::with('paquete')->findOrFail($request->cliente_id);
 
-    if (!$cliente->paquete) {
-        return redirect()->back()->with('error', 'Este cliente no tiene paquete asignado.');
-    }
-
-    $precioPaquete = $cliente->paquete->precio;
-    $meses = (int) $request->meses;
-
-    $mesesExtra = 0;
-    if ($meses === 6) {
-        $mesesExtra = 1;
-    } elseif ($meses === 12) {
-        $mesesExtra = 2;
-    }
-
-    $mesesTotales = $meses + $mesesExtra;
-    $subtotal = $precioPaquete * $meses;
-    $fechaHoy = now()->startOfDay();
-
-    $ultimaVenta = Venta::where('cliente_id', $cliente->id)
-        ->orderBy('fecha_venta', 'desc')
-        ->first();
-
-    [$diasAtraso, $recargoCalculado] = $this->obtenerAtrasoYRecargo($cliente);
-
-    $total = $subtotal
-        - ($request->descuento ?? 0)
-        + ($request->recargo_domicilio ?? 0)
-        + $recargoCalculado;
-
-    // ✅ Aseguramos que el día de cobro sea entero
-    $diaCobro = is_numeric($cliente->dia_cobro) ? (int) $cliente->dia_cobro : 1;
-
-    if ($ultimaVenta) {
-        $periodoInicio = Carbon::parse($ultimaVenta->periodo_fin)->startOfDay();
-    } else {
-        $hoy = now()->startOfDay();
-        $proximoCobro = $hoy->copy()->day($diaCobro);
-        if ($hoy->day > $diaCobro) {
-            $proximoCobro->addMonthNoOverflow();
+        if (!$cliente->paquete) {
+            return redirect()->back()->with('error', 'Este cliente no tiene paquete asignado.');
         }
-        $periodoInicio = $proximoCobro;
+
+        $precioPaquete = $cliente->paquete->precio;
+        $meses = (int) $request->meses;
+
+        $mesesExtra = 0;
+        if ($meses === 6) {
+            $mesesExtra = 1;
+        } elseif ($meses === 12) {
+            $mesesExtra = 2;
+        }
+
+        $mesesTotales = $meses + $mesesExtra;
+        $subtotal = $precioPaquete * $meses;
+        $fechaHoy = now()->startOfDay();
+
+        $ultimaVenta = Venta::where('cliente_id', $cliente->id)
+            ->orderBy('fecha_venta', 'desc')
+            ->first();
+
+        [$diasAtraso, $recargoCalculado] = $this->obtenerAtrasoYRecargo($cliente);
+
+        $total = $subtotal
+            - ($request->descuento ?? 0)
+            + ($request->recargo_domicilio ?? 0)
+            + $recargoCalculado;
+
+        // ✅ Aseguramos que el día de cobro sea entero
+        $diaCobro = is_numeric($cliente->dia_cobro) ? (int) $cliente->dia_cobro : 1;
+
+        if ($ultimaVenta) {
+            $periodoInicio = Carbon::parse($ultimaVenta->periodo_fin)->startOfDay();
+        } else {
+            $hoy = now()->startOfDay();
+            $proximoCobro = $hoy->copy()->day($diaCobro);
+            if ($hoy->day > $diaCobro) {
+                $proximoCobro->addMonthNoOverflow();
+            }
+            $periodoInicio = $proximoCobro;
+        }
+
+        $periodoFin = $periodoInicio->copy()->addMonthsNoOverflow($mesesTotales);
+
+        $venta = Venta::create([
+            'usuario_id' => Auth::id(),
+            'cliente_id' => $cliente->id,
+            'estado' => 'pagado',
+            'meses' => $meses,
+            'descuento' => $request->descuento ?? 0,
+            'recargo_domicilio' => $request->recargo_domicilio ?? 0,
+            'recargo_atraso' => $recargoCalculado,
+            'fecha_venta' => now(),
+            'subtotal' => $subtotal,
+            'total' => $total,
+            'periodo_inicio' => $periodoInicio,
+            'periodo_fin' => $periodoFin,
+            'tipo_pago' => $request->tipo_pago,
+        ]);
+        return redirect()->route('ventas.index')
+            ->with('venta_id_para_imprimir', $venta->id);
+
+
     }
-
-    $periodoFin = $periodoInicio->copy()->addMonthsNoOverflow($mesesTotales);
-
-    $venta = Venta::create([
-        'usuario_id' => Auth::id(),
-        'cliente_id' => $cliente->id,
-        'estado' => 'pagado',
-        'meses' => $meses,
-        'descuento' => $request->descuento ?? 0,
-        'recargo_domicilio' => $request->recargo_domicilio ?? 0,
-        'recargo_atraso' => $recargoCalculado,
-        'fecha_venta' => now(),
-        'subtotal' => $subtotal,
-        'total' => $total,
-        'periodo_inicio' => $periodoInicio,
-        'periodo_fin' => $periodoFin,
-        'tipo_pago' => $request->tipo_pago,
-    ]);
-return redirect()->route('ventas.index')
-        ->with('venta_id_para_imprimir', $venta->id);
-
-
-}
 
 
     public function historial()
@@ -154,12 +154,53 @@ return redirect()->route('ventas.index')
 
         return view('ventas_historial.index', compact('ventas'));
     }
-
-   public function corte(Request $request)
+public function corte(Request $request)
 {
-    $fecha = $request->input('fecha') ?? now()->toDateString();
+    $hoy = now()->startOfDay();
+    $ayer = $hoy->copy()->subDay();
+
+    $usuarios = \App\Models\User::all();
+    $tiposClientes = Cliente::select('tipo')->distinct()->pluck('tipo');
+
+    // 🔴 Clientes pendientes de HOY
+    $clientesPendientesHoy = Cliente::where('dia_cobro', $hoy->day)
+        ->whereDoesntHave('ventas', function ($q) use ($hoy) {
+            $q->whereMonth('fecha_venta', $hoy->month)
+              ->whereYear('fecha_venta', $hoy->year);
+        })
+        ->with('paquete')
+        ->get();
+
+    // 🔴 Clientes pendientes de AYER
+    $clientesPendientesAyer = Cliente::where('dia_cobro', $ayer->day)
+        ->whereDoesntHave('ventas', function ($q) use ($ayer) {
+            $q->whereMonth('fecha_venta', $ayer->month)
+              ->whereYear('fecha_venta', $ayer->year);
+        })
+        ->with('paquete')
+        ->get();
+
+    // 🚨 Mostrar modal SOLO si:
+    // - hay pendientes hoy
+    // - NO se forzó el corte
+    if ($clientesPendientesHoy->count() > 0 && !$request->boolean('forzar_corte')) {
+        return view('ventas_corte.index', [
+            'clientesPendientesHoy' => $clientesPendientesHoy,
+            'clientesPendientesAyer' => $clientesPendientesAyer,
+            'bloquearCorte' => true,
+            'usuarios' => $usuarios,
+            'tiposClientes' => $tiposClientes,
+        ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Corte normal
+    |--------------------------------------------------------------------------
+    */
+    $fecha = $request->input('fecha', $hoy->toDateString());
     $usuario_id = $request->input('usuario_id');
-    $tipo_cliente = $request->input('tipo_cliente'); // 👈 nuevo campo
+    $tipo_cliente = $request->input('tipo_cliente');
 
     $query = Venta::with(['cliente', 'usuario'])
         ->whereDate('created_at', $fecha);
@@ -182,9 +223,6 @@ return redirect()->route('ventas.index')
     $conteoEfectivo = $ventas->where('tipo_pago', 'Efectivo')->count();
     $conteoTransferencia = $ventas->where('tipo_pago', 'Transferencia')->count();
 
-    $usuarios = \App\Models\User::all();
-    $tiposClientes = Cliente::select('tipo')->distinct()->pluck('tipo'); // 👈 para llenar el select
-
     return view('ventas_corte.index', compact(
         'ventas',
         'usuarios',
@@ -192,9 +230,11 @@ return redirect()->route('ventas.index')
         'totalEfectivo',
         'totalTransferencia',
         'conteoEfectivo',
-        'conteoTransferencia'
+        'conteoTransferencia',
+        'clientesPendientesAyer'
     ));
 }
+
 
     public function obtenerVenta($id)
     {
@@ -211,52 +251,52 @@ return redirect()->route('ventas.index')
         ]);
     }
 
-   private function obtenerAtrasoYRecargo(Cliente $cliente): array
-{
-    $hoy = now()->startOfDay();
+    private function obtenerAtrasoYRecargo(Cliente $cliente): array
+    {
+        $hoy = now()->startOfDay();
 
-    // Verifica si ya se realizó una venta este mes
-    $ventaActual = Venta::where('cliente_id', $cliente->id)
-        ->whereMonth('fecha_venta', $hoy->month)
-        ->whereYear('fecha_venta', $hoy->year)
-        ->first();
+        // Verifica si ya se realizó una venta este mes
+        $ventaActual = Venta::where('cliente_id', $cliente->id)
+            ->whereMonth('fecha_venta', $hoy->month)
+            ->whereYear('fecha_venta', $hoy->year)
+            ->first();
 
-    if ($ventaActual) {
-        return [0, 0]; // Ya pagó este mes
-    }
-
-    // ⚠️ Si es cliente nuevo o sin historial de ventas
-    $ultimaVenta = Venta::where('cliente_id', $cliente->id)
-        ->orderByDesc('fecha_venta')
-        ->first();
-
-    if (is_null($ultimaVenta)) {
-        // Aplicar lógica de recargo según día de cobro del cliente
-        $diaCobro = Carbon::createFromDate($hoy->year, $hoy->month, $cliente->dia_cobro)->startOfDay();
-
-        if ($hoy->greaterThan($diaCobro)) {
-            $diasRetraso = $diaCobro->diffInDays($hoy);
-            $recargo = $diasRetraso <= 3 ? 40 : 140;
-            return [$diasRetraso, $recargo];
+        if ($ventaActual) {
+            return [0, 0]; // Ya pagó este mes
         }
 
-        return [0, 0]; // Aún no llega su día de cobro
+        // ⚠️ Si es cliente nuevo o sin historial de ventas
+        $ultimaVenta = Venta::where('cliente_id', $cliente->id)
+            ->orderByDesc('fecha_venta')
+            ->first();
+
+        if (is_null($ultimaVenta)) {
+            // Aplicar lógica de recargo según día de cobro del cliente
+            $diaCobro = Carbon::createFromDate($hoy->year, $hoy->month, $cliente->dia_cobro)->startOfDay();
+
+            if ($hoy->greaterThan($diaCobro)) {
+                $diasRetraso = $diaCobro->diffInDays($hoy);
+                $recargo = $diasRetraso <= 3 ? 40 : 140;
+                return [$diasRetraso, $recargo];
+            }
+
+            return [0, 0]; // Aún no llega su día de cobro
+        }
+
+        // ⚡ Caso normal: calcular atraso desde periodo_fin
+        $fechaBase = Carbon::parse($ultimaVenta->periodo_fin)->startOfDay();
+        $primerDiaAtraso = $fechaBase->copy()->addDay();
+
+        $diasAtraso = 0;
+        $recargo = 0;
+
+        if ($hoy->greaterThanOrEqualTo($primerDiaAtraso)) {
+            $diasAtraso = $primerDiaAtraso->diffInDays($hoy) + 1;
+            $recargo = $diasAtraso <= 3 ? 40 : 140;
+        }
+
+        return [$diasAtraso, $recargo];
     }
-
-    // ⚡ Caso normal: calcular atraso desde periodo_fin
-    $fechaBase = Carbon::parse($ultimaVenta->periodo_fin)->startOfDay();
-    $primerDiaAtraso = $fechaBase->copy()->addDay();
-
-    $diasAtraso = 0;
-    $recargo = 0;
-
-    if ($hoy->greaterThanOrEqualTo($primerDiaAtraso)) {
-        $diasAtraso = $primerDiaAtraso->diffInDays($hoy) + 1;
-        $recargo = $diasAtraso <= 3 ? 40 : 140;
-    }
-
-    return [$diasAtraso, $recargo];
-}
 
 
     public function estadoCliente($clienteId)
@@ -300,76 +340,135 @@ return redirect()->route('ventas.index')
         }
     }
 
-public function update(Request $request, Venta $venta)
+    public function clientesPendientesHoy()
+    {
+        $hoy = now();
+
+        $clientes = Cliente::where('dia_cobro', $hoy->day)
+            ->whereDoesntHave('ventas', function ($q) use ($hoy) {
+                $q->whereMonth('fecha_venta', $hoy->month)
+                    ->whereYear('fecha_venta', $hoy->year);
+            })
+            ->with('paquete')
+            ->get();
+
+        return $clientes;
+    }
+    
+   public function pagarPorTransferencia(Request $request)
 {
-    $request->validate([
-        'meses' => 'required|integer|min:1|max:12',
-        'tipo_pago' => 'required|in:Efectivo,Transferencia',
-        'descuento' => 'nullable|numeric|min:0',
-        'recargo_domicilio' => 'nullable|numeric|min:0',
-        'recargo_falta_pago' => 'nullable|numeric|min:0',
-    ]);
+    $clientesIds = $request->clientes ?? [];
+    $hoy = now()->startOfDay();
 
-    $cliente = $venta->cliente()->with('paquete')->first();
+    foreach ($clientesIds as $clienteId) {
 
-    if (!$cliente || !$cliente->paquete) {
-        return redirect()->back()->with('error', 'El cliente no tiene paquete asignado.');
-    }
-
-    $precioBase = $cliente->paquete->precio;
-    $meses = (int) $request->meses;
-
-    $mesesExtra = 0;
-    if ($meses === 6) {
-        $mesesExtra = 1;
-    } elseif ($meses === 12) {
-        $mesesExtra = 2;
-    }
-
-    $mesesTotales = $meses + $mesesExtra;
-
-    $subtotal = $precioBase * $meses;
-    $total = $subtotal
-        - ($request->descuento ?? 0)
-        + ($request->recargo_domicilio ?? 0)
-        + ($request->recargo_falta_pago ?? 0);
-
-    $ultimaVenta = Venta::where('cliente_id', $cliente->id)
-        ->where('id', '!=', $venta->id)
-        ->orderBy('fecha_venta', 'desc')
-        ->first();
-
-    // ✅ Aseguramos que el día de cobro sea entero
-    $diaCobro = is_numeric($cliente->dia_cobro) ? (int) $cliente->dia_cobro : 1;
-
-    if ($ultimaVenta) {
-        $periodoInicio = Carbon::parse($ultimaVenta->periodo_fin)->startOfDay();
-    } else {
-        $hoy = now()->startOfDay();
-        $proximoCobro = $hoy->copy()->day($diaCobro);
-        if ($hoy->day > $diaCobro) {
-            $proximoCobro->addMonthNoOverflow();
+        $cliente = Cliente::with('paquete')->find($clienteId);
+        if (!$cliente || !$cliente->paquete) {
+            continue;
         }
-        $periodoInicio = $proximoCobro;
+
+        $precio = $cliente->paquete->precio;
+
+        // 🔴 Calcular atraso real
+        [$diasAtraso, $recargo] = $this->obtenerAtrasoYRecargo($cliente);
+
+        $subtotal = $precio;
+        $total = $subtotal + $recargo;
+
+        Venta::create([
+            'usuario_id' => auth()->id(),
+            'cliente_id' => $cliente->id,
+            'estado' => 'pagado',
+            'meses' => 1,
+            'descuento' => 0,
+            'recargo_domicilio' => 0,
+            'recargo_atraso' => $recargo,
+            'fecha_venta' => now(),
+            'subtotal' => $subtotal,
+            'total' => $total,
+            'periodo_inicio' => $hoy,
+            'periodo_fin' => $hoy->copy()->addMonth(),
+            'tipo_pago' => 'Transferencia',
+        ]);
     }
 
-    $periodoFin = $periodoInicio->copy()->addMonthsNoOverflow($mesesTotales);
-
-    $venta->update([
-        'meses' => $meses,
-        'tipo_pago' => $request->tipo_pago,
-        'descuento' => $request->descuento ?? 0,
-        'recargo_domicilio' => $request->recargo_domicilio ?? 0,
-        'recargo_falta_pago' => $request->recargo_falta_pago ?? 0,
-        'subtotal' => $subtotal,
-        'total' => $total,
-        'periodo_inicio' => $periodoInicio,
-        'periodo_fin' => $periodoFin,
-    ]);
-
-    return redirect()->route('ventas.index')
-        ->with('success', 'Venta actualizada correctamente ✨');
+    return redirect()->route('ventas.corte', $request->only([
+        'fecha',
+        'usuario_id',
+        'tipo_cliente'
+    ]))->with('success', 'Pagos por transferencia registrados correctamente.');
 }
+
+    public function update(Request $request, Venta $venta)
+    {
+        $request->validate([
+            'meses' => 'required|integer|min:1|max:12',
+            'tipo_pago' => 'required|in:Efectivo,Transferencia',
+            'descuento' => 'nullable|numeric|min:0',
+            'recargo_domicilio' => 'nullable|numeric|min:0',
+            'recargo_falta_pago' => 'nullable|numeric|min:0',
+        ]);
+
+        $cliente = $venta->cliente()->with('paquete')->first();
+
+        if (!$cliente || !$cliente->paquete) {
+            return redirect()->back()->with('error', 'El cliente no tiene paquete asignado.');
+        }
+
+        $precioBase = $cliente->paquete->precio;
+        $meses = (int) $request->meses;
+
+        $mesesExtra = 0;
+        if ($meses === 6) {
+            $mesesExtra = 1;
+        } elseif ($meses === 12) {
+            $mesesExtra = 2;
+        }
+
+        $mesesTotales = $meses + $mesesExtra;
+
+        $subtotal = $precioBase * $meses;
+        $total = $subtotal
+            - ($request->descuento ?? 0)
+            + ($request->recargo_domicilio ?? 0)
+            + ($request->recargo_falta_pago ?? 0);
+
+        $ultimaVenta = Venta::where('cliente_id', $cliente->id)
+            ->where('id', '!=', $venta->id)
+            ->orderBy('fecha_venta', 'desc')
+            ->first();
+
+        // ✅ Aseguramos que el día de cobro sea entero
+        $diaCobro = is_numeric($cliente->dia_cobro) ? (int) $cliente->dia_cobro : 1;
+
+        if ($ultimaVenta) {
+            $periodoInicio = Carbon::parse($ultimaVenta->periodo_fin)->startOfDay();
+        } else {
+            $hoy = now()->startOfDay();
+            $proximoCobro = $hoy->copy()->day($diaCobro);
+            if ($hoy->day > $diaCobro) {
+                $proximoCobro->addMonthNoOverflow();
+            }
+            $periodoInicio = $proximoCobro;
+        }
+
+        $periodoFin = $periodoInicio->copy()->addMonthsNoOverflow($mesesTotales);
+
+        $venta->update([
+            'meses' => $meses,
+            'tipo_pago' => $request->tipo_pago,
+            'descuento' => $request->descuento ?? 0,
+            'recargo_domicilio' => $request->recargo_domicilio ?? 0,
+            'recargo_falta_pago' => $request->recargo_falta_pago ?? 0,
+            'subtotal' => $subtotal,
+            'total' => $total,
+            'periodo_inicio' => $periodoInicio,
+            'periodo_fin' => $periodoFin,
+        ]);
+
+        return redirect()->route('ventas.index')
+            ->with('success', 'Venta actualizada correctamente ✨');
+    }
 
 
     public function destroy($id)
@@ -379,4 +478,42 @@ public function update(Request $request, Venta $venta)
 
         return redirect()->route('ventas.historial')->with('success', 'Venta eliminada correctamente.');
     }
+public function cerrarCorteHoy(Request $request)
+{
+    return redirect()->route('ventas.corte', array_merge(
+        $request->only(['fecha', 'usuario_id', 'tipo_cliente']),
+        ['forzar_corte' => 1]
+    ))->with('info', 'Corte revisado sin registrar transferencias.');
+}
+
+public function filtrarCorte(Request $request)
+{
+    $fecha = $request->fecha ?? now()->toDateString();
+    $usuario_id = $request->usuario_id;
+    $tipo_cliente = $request->tipo_cliente;
+
+    $query = Venta::with(['cliente', 'usuario'])
+        ->whereDate('created_at', $fecha);
+
+    if ($usuario_id) {
+        $query->where('usuario_id', $usuario_id);
+    }
+
+    if ($tipo_cliente) {
+        $query->whereHas('cliente', function ($q) use ($tipo_cliente) {
+            $q->where('tipo', $tipo_cliente);
+        });
+    }
+
+    $ventas = $query->orderBy('fecha_venta', 'desc')->get();
+
+    return response()->json([
+        'ventas' => $ventas,
+        'totalEfectivo' => $ventas->where('tipo_pago', 'Efectivo')->sum('total'),
+        'totalTransferencia' => $ventas->where('tipo_pago', 'Transferencia')->sum('total'),
+        'conteoEfectivo' => $ventas->where('tipo_pago', 'Efectivo')->count(),
+        'conteoTransferencia' => $ventas->where('tipo_pago', 'Transferencia')->count(),
+        'totalGeneral' => $ventas->sum('total'),
+    ]);
+}
 }

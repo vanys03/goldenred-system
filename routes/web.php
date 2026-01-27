@@ -125,6 +125,12 @@ Route::delete('/rentas/{id}',
 
     Route::resource('paquetes', PaquetesController::class);
 
+
+    
+    //-------------------------------------------------------------------
+
+    //Rutas de cliente de ventas, corte eh historial 
+
     Route::get('/ventas/recargo/{cliente}', [VentasController::class, 'calcularRecargo']);
     Route::get('/ventas/buscar-clientes', [VentasController::class, 'buscarClientes'])->name('ventas.buscar-clientes');
     Route::get('/ventas/estado-cliente/{clienteId}', [VentasController::class, 'estadoCliente']);
@@ -139,6 +145,17 @@ Route::delete('/rentas/{id}',
 
     Route::get('/ventas/exportar', [ExportarVentasController::class, 'exportar'])->name('ventas.exportar');
     Route::resource('accounts', AccountController::class);
+
+    Route::post('/ventas/pago-transferencia', 
+    [VentasController::class, 'pagarPorTransferencia']
+)->name('ventas.pago.transferencia');
+Route::get('/ventas/corte/cerrar', [VentasController::class, 'cerrarCorteHoy'])
+    ->name('ventas.corte.cerrar');
+Route::get('/ventas/corte/filtrar', [VentasController::class, 'filtrarCorte'])
+    ->name('ventas.corte.filtrar');
+
+
+     //-------------------------------------------------------------------
     Route::post('/accounts/{account}/change-password', [AccountController::class, 'changePassword'])->name('accounts.changePassword');
 
 });
