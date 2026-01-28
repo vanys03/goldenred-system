@@ -29,25 +29,16 @@ class Venta extends Model
         'periodo_fin',
     ];
 
-    /**
-     * Relación con cliente
-     */
     public function cliente()
     {
         return $this->belongsTo(Cliente::class);
     }
 
-    /**
-     * Relación con usuario (quien registró la venta)
-     */
     public function usuario()
     {
         return $this->belongsTo(User::class, 'usuario_id');
     }
 
-    /**
-     * Configuración de auditoría con Spatie
-     */
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
@@ -71,9 +62,6 @@ class Venta extends Model
             ->dontSubmitEmptyLogs();
     }
 
-    /**
-     * Agrega info del cliente al log para que sea más legible
-     */
     public function tapActivity(Activity $activity, string $eventName)
     {
         $properties = $activity->properties;

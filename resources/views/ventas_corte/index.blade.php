@@ -3,21 +3,26 @@
 
     <main class="main-content position-relative max-height-vh-100 h-100 border-radius-lg" translate="no">
         <x-navbars.navs.auth titlePage="Corte de ventas" />
-        {{-- ================= MODAL PENDIENTES AYER + HOY ================= --}}
         @if(isset($bloquearCorte) && $bloquearCorte)
             <div class="modal fade show d-block" tabindex="-1"
                 style="background: rgba(0,0,0,.7); backdrop-filter: blur(4px);">
                 <div class="modal-dialog modal-xl modal-dialog-centered">
                     <div class="modal-content border-0 shadow-lg">
 
-                        {{-- Header --}}
-                        <div class="modal-header bg-white border-bottom-0 pt-4 px-4">
+                        <div
+                            class="modal-header bg-white border-bottom-0 pt-4 px-4 d-flex justify-content-between align-items-center">
                             <h5 class="modal-title fw-bold text-dark d-flex align-items-center">
                                 <span class="badge bg-warning text-dark me-2 p-2">
                                     <i class="fas fa-exclamation-triangle"></i>
                                 </span>
                                 Clientes con Pagos Pendientes
                             </h5>
+
+                            <a href="{{ route('ventas.corte', array_merge(request()->all(), ['forzar_corte' => 1])) }}"
+                                class="btn btn-outline-danger btn-sm d-flex align-items-center fw-bold"
+                                style="border-radius: 20px; padding: 5px 15px;">
+                                <i class="fas fa-times me-2"></i> Cerrar
+                            </a>
                         </div>
 
                         <div class="modal-body px-4">
@@ -31,10 +36,9 @@
                                 <input type="hidden" name="usuario_id" value="{{ request('usuario_id') }}">
                                 <input type="hidden" name="tipo_cliente" value="{{ request('tipo_cliente') }}">
 
-                                {{-- ================= PENDIENTES DE AYER ================= --}}
                                 @if(isset($clientesPendientesAyer) && $clientesPendientesAyer->count())
                                     <h6 class="text-danger fw-bold mt-3 mb-2">
-                                        <i class="fas fa-clock me-1"></i> Pendientes de AYER
+                                        <i class="fas fa-clock me-1"></i> Todos los pendientes
                                     </h6>
 
                                     <div class="table-responsive mb-4">
@@ -42,7 +46,7 @@
                                             <thead class="table-light">
                                                 <tr>
                                                     <th>Cliente</th>
-                                                    <th>Paquete</th>
+                                                    <th class="text-center">Último mes pagado</th>
                                                     <th class="text-center">Día de cobro</th>
                                                     <th class="text-center">¿Pagó?</th>
                                                 </tr>
@@ -51,10 +55,16 @@
                                                 @foreach($clientesPendientesAyer as $cliente)
                                                     <tr class="table-danger bg-opacity-25">
                                                         <td class="fw-bold">{{ $cliente->nombre }}</td>
-                                                        <td>
-                                                            <span class="badge bg-light text-dark border">
-                                                                {{ $cliente->paquete->nombre ?? '—' }}
-                                                            </span>
+                                                        <td class="text-center">
+                                                            @if($cliente->ventas->first())
+                                                                <span class="badge bg-secondary">
+                                                                    {{ \Carbon\Carbon::parse($cliente->ventas->first()->periodo_fin)->translatedFormat('F Y') }}
+                                                                </span>
+                                                            @else
+                                                                <span class="badge bg-warning text-dark">
+                                                                    Sin pagos registrados
+                                                                </span>
+                                                            @endif
                                                         </td>
                                                         <td class="text-center">{{ $cliente->dia_cobro }}</td>
                                                         <td class="text-center">
@@ -65,11 +75,21 @@
                                                     </tr>
                                                 @endforeach
                                             </tbody>
+
                                         </table>
+                                        <div
+                                            class="card-footer bg-white border-top-0 d-flex justify-content-between align-items-center py-3">
+                                            <div class="text-muted small">
+                                                Página {{ $clientesPendientesAyer->currentPage() }} de
+                                                {{ $clientesPendientesAyer->lastPage() }}
+                                            </div>
+                                            <div class="pagination-custom">
+                                                {{ $clientesPendientesAyer->withQueryString()->links('pagination::bootstrap-5') }}
+                                            </div>
+                                        </div>
                                     </div>
                                 @endif
 
-                                {{-- ================= PENDIENTES DE HOY ================= --}}
                                 @if(isset($clientesPendientesHoy) && $clientesPendientesHoy->count())
                                     <h6 class="text-warning fw-bold mt-3 mb-2">
                                         <i class="fas fa-calendar-day me-1"></i> Pendientes de HOY
@@ -109,13 +129,11 @@
                                     </div>
                                 @endif
 
-                                {{-- INFO --}}
                                 <div class="alert alert-light border-0 small text-muted mt-3">
                                     <i class="fas fa-info-circle me-1"></i>
                                     Los clientes no marcados permanecerán con estatus <strong>Pendiente</strong>.
                                 </div>
 
-                                {{-- BOTONES --}}
                                 <div class="row g-2 pb-3">
                                     <div class="col-md-7">
                                         <button type="submit" class="btn btn-success w-100 fw-bold py-2">
@@ -137,10 +155,7 @@
             </div>
         @endif
 
-        {{-- ================= CORTE NORMAL ================= --}}
         <div class="card m-4 p-4">
-
-            {{-- FORMULARIO DE FILTROS (SIN SUBMIT) --}}
             <form onsubmit="return false;">
                 <div class="row mb-4">
 
@@ -183,8 +198,6 @@
             <hr>
 
             <h5 class="mb-3">Ventas encontradas</h5>
-
-            {{-- TABLA --}}
             <div class="table-responsive">
                 <table class="table table-bordered table-striped">
                     <thead>
@@ -207,7 +220,6 @@
                 </table>
             </div>
 
-            {{-- TOTALES --}}
             <div class="row mt-4">
                 <div class="col-md-6">
                     <div class="alert alert-success">
@@ -237,7 +249,6 @@
 
     </main>
 
-    {{-- ================= JS FILTROS AJAX ================= --}}
     <script>
         document.getElementById('btnFiltrar').addEventListener('click', filtrarCorte);
 

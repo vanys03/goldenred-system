@@ -54,7 +54,7 @@ class VentasController extends Controller
             return [
                 'id' => $cliente->id,
                 'text' => $cliente->nombre,
-                'tipo' => $cliente->tipo, // 👈 necesario
+                'tipo' => $cliente->tipo,
                 'dia_pago' => $cliente->dia_cobro,
                 'paquete' => [
                     'nombre' => $cliente->paquete->nombre ?? 'Sin paquete',
@@ -108,7 +108,6 @@ class VentasController extends Controller
             + ($request->recargo_domicilio ?? 0)
             + $recargoCalculado;
 
-        // ✅ Aseguramos que el día de cobro sea entero
         $diaCobro = is_numeric($cliente->dia_cobro) ? (int) $cliente->dia_cobro : 1;
 
         if ($ultimaVenta) {
@@ -145,133 +144,126 @@ class VentasController extends Controller
 
     }
 
-
     public function historial()
     {
         $ventas = Venta::with(['cliente', 'usuario'])
             ->orderBy('fecha_venta', 'desc')
-            ->get(); // Puedes ajustar la paginaciÃ³n
+            ->get();
 
         return view('ventas_historial.index', compact('ventas'));
     }
-public function corte(Request $request)
-{
-    $hoy = now()->startOfDay();
-    $ayer = $hoy->copy()->subDay();
-
-    $usuarios = \App\Models\User::all();
-    $tiposClientes = Cliente::select('tipo')->distinct()->pluck('tipo');
-
-    // 🔴 Clientes pendientes de HOY
-    $clientesPendientesHoy = Cliente::where('dia_cobro', $hoy->day)
-        ->whereDoesntHave('ventas', function ($q) use ($hoy) {
-            $q->whereMonth('fecha_venta', $hoy->month)
-              ->whereYear('fecha_venta', $hoy->year);
-        })
-        ->with('paquete')
-        ->get();
-
-    // 🔴 Clientes pendientes de AYER
-    $clientesPendientesAyer = Cliente::where('dia_cobro', $ayer->day)
-        ->whereDoesntHave('ventas', function ($q) use ($ayer) {
-            $q->whereMonth('fecha_venta', $ayer->month)
-              ->whereYear('fecha_venta', $ayer->year);
-        })
-        ->with('paquete')
-        ->get();
-
-    // 🚨 Mostrar modal SOLO si:
-    // - hay pendientes hoy
-    // - NO se forzó el corte
-    if ($clientesPendientesHoy->count() > 0 && !$request->boolean('forzar_corte')) {
-        return view('ventas_corte.index', [
-            'clientesPendientesHoy' => $clientesPendientesHoy,
-            'clientesPendientesAyer' => $clientesPendientesAyer,
-            'bloquearCorte' => true,
-            'usuarios' => $usuarios,
-            'tiposClientes' => $tiposClientes,
-        ]);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Corte normal
-    |--------------------------------------------------------------------------
-    */
-    $fecha = $request->input('fecha', $hoy->toDateString());
-    $usuario_id = $request->input('usuario_id');
-    $tipo_cliente = $request->input('tipo_cliente');
-
-    $query = Venta::with(['cliente', 'usuario'])
-        ->whereDate('created_at', $fecha);
-
-    if ($usuario_id) {
-        $query->where('usuario_id', $usuario_id);
-    }
-
-    if ($tipo_cliente) {
-        $query->whereHas('cliente', function ($q) use ($tipo_cliente) {
-            $q->where('tipo', $tipo_cliente);
-        });
-    }
-
-    $ventas = $query->orderBy('fecha_venta', 'desc')->get();
-
-    $totalEfectivo = $ventas->where('tipo_pago', 'Efectivo')->sum('total');
-    $totalTransferencia = $ventas->where('tipo_pago', 'Transferencia')->sum('total');
-
-    $conteoEfectivo = $ventas->where('tipo_pago', 'Efectivo')->count();
-    $conteoTransferencia = $ventas->where('tipo_pago', 'Transferencia')->count();
-
-    return view('ventas_corte.index', compact(
-        'ventas',
-        'usuarios',
-        'tiposClientes',
-        'totalEfectivo',
-        'totalTransferencia',
-        'conteoEfectivo',
-        'conteoTransferencia',
-        'clientesPendientesAyer'
-    ));
-}
-
-
-    public function obtenerVenta($id)
+    public function corte(Request $request)
     {
-        $venta = Venta::with('cliente', 'usuario')->findOrFail($id);
+        $hoy = now()->startOfDay();
 
-        return response()->json([
-            'cliente' => $venta->cliente->nombre,
-            'paquete' => $venta->cliente->paquete->nombre ?? 'Sin paquete',
-            'meses' => $venta->meses,
-            'descuento' => $venta->descuento,
-            'recargo_domicilio' => $venta->recargo_domicilio,
-            'recargo_falta_pago' => $venta->recargo_falta_pago ?? 0,
-            'total' => $venta->total
-        ]);
+        $usuarios = \App\Models\User::all();
+        $tiposClientes = Cliente::select('tipo')->distinct()->pluck('tipo');
+
+
+        $clientesPendientesHoy = Cliente::where('activo', 1)
+            ->where('dia_cobro', $hoy->day)
+            ->whereDoesntHave('ventas', function ($q) use ($hoy) {
+                $q->where('periodo_fin', '>', $hoy);
+            })
+            ->with([
+                'paquete',
+                'ventas' => function ($q) {
+                    $q->orderByDesc('periodo_fin')->limit(1);
+                }
+            ])
+            ->get();
+
+        $clientesAtrasados = Cliente::where('activo', 1)
+            ->whereDoesntHave('ventas', function ($q) use ($hoy) {
+                $q->where('periodo_fin', '>', $hoy);
+            })
+            ->with([
+                'paquete',
+                'ventas' => function ($q) {
+                    $q->orderByDesc('periodo_fin')->limit(1);
+                }
+            ])
+            ->orderByRaw('
+        (SELECT MAX(periodo_fin)
+         FROM ventas
+         WHERE ventas.cliente_id = clientes.id) IS NULL
+    ')
+            ->orderBy(
+                Venta::select('periodo_fin')
+                    ->whereColumn('ventas.cliente_id', 'clientes.id')
+                    ->orderByDesc('periodo_fin')
+                    ->limit(1),
+                'asc'
+            )
+            ->paginate(10);
+ 
+        if (
+            ($clientesPendientesHoy->count() > 0 || $clientesAtrasados->count() > 0)
+            && !$request->boolean('forzar_corte')
+        ) {
+            return view('ventas_corte.index', [
+                'clientesPendientesHoy' => $clientesPendientesHoy,
+                'clientesPendientesAyer' => $clientesAtrasados, // reutilizamos variable
+                'bloquearCorte' => true,
+                'usuarios' => $usuarios,
+                'tiposClientes' => $tiposClientes,
+            ]);
+        }
+
+        $fecha = $request->input('fecha', $hoy->toDateString());
+        $usuario_id = $request->input('usuario_id');
+        $tipo_cliente = $request->input('tipo_cliente');
+
+        $query = Venta::with(['cliente', 'usuario'])
+            ->whereDate('created_at', $fecha);
+
+        if ($usuario_id) {
+            $query->where('usuario_id', $usuario_id);
+        }
+
+        if ($tipo_cliente) {
+            $query->whereHas('cliente', function ($q) use ($tipo_cliente) {
+                $q->where('tipo', $tipo_cliente);
+            });
+        }
+
+        $ventas = $query->orderBy('fecha_venta', 'desc')->get();
+
+        $totalEfectivo = $ventas->where('tipo_pago', 'Efectivo')->sum('total');
+        $totalTransferencia = $ventas->where('tipo_pago', 'Transferencia')->sum('total');
+        $conteoEfectivo = $ventas->where('tipo_pago', 'Efectivo')->count();
+        $conteoTransferencia = $ventas->where('tipo_pago', 'Transferencia')->count();
+
+        return view('ventas_corte.index', compact(
+            'ventas',
+            'usuarios',
+            'tiposClientes',
+            'totalEfectivo',
+            'totalTransferencia',
+            'conteoEfectivo',
+            'conteoTransferencia'
+        ));
     }
 
     private function obtenerAtrasoYRecargo(Cliente $cliente): array
     {
         $hoy = now()->startOfDay();
 
-        // Verifica si ya se realizó una venta este mes
         $ventaActual = Venta::where('cliente_id', $cliente->id)
             ->whereMonth('fecha_venta', $hoy->month)
             ->whereYear('fecha_venta', $hoy->year)
             ->first();
 
         if ($ventaActual) {
-            return [0, 0]; // Ya pagó este mes
+            return [0, 0];
         }
 
-        // ⚠️ Si es cliente nuevo o sin historial de ventas
+
         $ultimaVenta = Venta::where('cliente_id', $cliente->id)
             ->orderByDesc('fecha_venta')
             ->first();
 
         if (is_null($ultimaVenta)) {
-            // Aplicar lógica de recargo según día de cobro del cliente
             $diaCobro = Carbon::createFromDate($hoy->year, $hoy->month, $cliente->dia_cobro)->startOfDay();
 
             if ($hoy->greaterThan($diaCobro)) {
@@ -280,10 +272,9 @@ public function corte(Request $request)
                 return [$diasRetraso, $recargo];
             }
 
-            return [0, 0]; // Aún no llega su día de cobro
+            return [0, 0];
         }
 
-        // ⚡ Caso normal: calcular atraso desde periodo_fin
         $fechaBase = Carbon::parse($ultimaVenta->periodo_fin)->startOfDay();
         $primerDiaAtraso = $fechaBase->copy()->addDay();
 
@@ -307,7 +298,6 @@ public function corte(Request $request)
 
         $ultimaVenta = $cliente->ventas->sortByDesc('fecha_venta')->first();
 
-        // ðŸŸ¢ Si no tiene ventas, no deberÃ­a aparecer como atrasado
         if (is_null($ultimaVenta)) {
             return response()->json([
                 'estado' => 'nuevo',
@@ -340,64 +330,51 @@ public function corte(Request $request)
         }
     }
 
-    public function clientesPendientesHoy()
+    public function pagarPorTransferencia(Request $request)
     {
-        $hoy = now();
+        $clientesIds = $request->clientes ?? [];
+        $hoy = now()->startOfDay();
 
-        $clientes = Cliente::where('dia_cobro', $hoy->day)
-            ->whereDoesntHave('ventas', function ($q) use ($hoy) {
-                $q->whereMonth('fecha_venta', $hoy->month)
-                    ->whereYear('fecha_venta', $hoy->year);
-            })
-            ->with('paquete')
-            ->get();
+        foreach ($clientesIds as $clienteId) {
 
-        return $clientes;
-    }
-    
-   public function pagarPorTransferencia(Request $request)
-{
-    $clientesIds = $request->clientes ?? [];
-    $hoy = now()->startOfDay();
+            $cliente = Cliente::with(['paquete', 'ventas'])->find($clienteId);
 
-    foreach ($clientesIds as $clienteId) {
+            if (!$cliente || !$cliente->paquete) {
+                continue;
+            }
 
-        $cliente = Cliente::with('paquete')->find($clienteId);
-        if (!$cliente || !$cliente->paquete) {
-            continue;
+            $precio = $cliente->paquete->precio;
+            $ultimaVenta = $cliente->ventas
+                ->sortByDesc('periodo_fin')
+                ->first();
+            if ($ultimaVenta) {
+                $periodoInicio = $ultimaVenta->periodo_fin->copy();
+            } else {
+                $periodoInicio = $hoy;
+            }
+
+            $periodoFin = $periodoInicio->copy()->addMonthNoOverflow();
+
+            Venta::create([
+                'usuario_id' => auth()->id(),
+                'cliente_id' => $cliente->id,
+                'estado' => 'pagado',
+                'meses' => 1,
+                'descuento' => 0,
+                'recargo_domicilio' => 0,
+                'recargo_atraso' => 0,
+                'fecha_venta' => now(),
+                'subtotal' => $precio,
+                'total' => $precio,
+                'periodo_inicio' => $periodoInicio,
+                'periodo_fin' => $periodoFin,
+                'tipo_pago' => 'Transferencia',
+            ]);
         }
 
-        $precio = $cliente->paquete->precio;
-
-        // 🔴 Calcular atraso real
-        [$diasAtraso, $recargo] = $this->obtenerAtrasoYRecargo($cliente);
-
-        $subtotal = $precio;
-        $total = $subtotal + $recargo;
-
-        Venta::create([
-            'usuario_id' => auth()->id(),
-            'cliente_id' => $cliente->id,
-            'estado' => 'pagado',
-            'meses' => 1,
-            'descuento' => 0,
-            'recargo_domicilio' => 0,
-            'recargo_atraso' => $recargo,
-            'fecha_venta' => now(),
-            'subtotal' => $subtotal,
-            'total' => $total,
-            'periodo_inicio' => $hoy,
-            'periodo_fin' => $hoy->copy()->addMonth(),
-            'tipo_pago' => 'Transferencia',
-        ]);
+        return redirect()->back()
+            ->with('success', 'Pagos por transferencia registrados correctamente.');
     }
-
-    return redirect()->route('ventas.corte', $request->only([
-        'fecha',
-        'usuario_id',
-        'tipo_cliente'
-    ]))->with('success', 'Pagos por transferencia registrados correctamente.');
-}
 
     public function update(Request $request, Venta $venta)
     {
@@ -438,7 +415,6 @@ public function corte(Request $request)
             ->orderBy('fecha_venta', 'desc')
             ->first();
 
-        // ✅ Aseguramos que el día de cobro sea entero
         $diaCobro = is_numeric($cliente->dia_cobro) ? (int) $cliente->dia_cobro : 1;
 
         if ($ultimaVenta) {
@@ -478,42 +454,43 @@ public function corte(Request $request)
 
         return redirect()->route('ventas.historial')->with('success', 'Venta eliminada correctamente.');
     }
-public function cerrarCorteHoy(Request $request)
-{
-    return redirect()->route('ventas.corte', array_merge(
-        $request->only(['fecha', 'usuario_id', 'tipo_cliente']),
-        ['forzar_corte' => 1]
-    ))->with('info', 'Corte revisado sin registrar transferencias.');
-}
 
-public function filtrarCorte(Request $request)
-{
-    $fecha = $request->fecha ?? now()->toDateString();
-    $usuario_id = $request->usuario_id;
-    $tipo_cliente = $request->tipo_cliente;
-
-    $query = Venta::with(['cliente', 'usuario'])
-        ->whereDate('created_at', $fecha);
-
-    if ($usuario_id) {
-        $query->where('usuario_id', $usuario_id);
+    public function cerrarCorteHoy(Request $request)
+    {
+        return redirect()->route('ventas.corte', array_merge(
+            $request->only(['fecha', 'usuario_id', 'tipo_cliente']),
+            ['forzar_corte' => 1]
+        ))->with('info', 'Corte revisado sin registrar transferencias.');
     }
 
-    if ($tipo_cliente) {
-        $query->whereHas('cliente', function ($q) use ($tipo_cliente) {
-            $q->where('tipo', $tipo_cliente);
-        });
+    public function filtrarCorte(Request $request)
+    {
+        $fecha = $request->fecha ?? now()->toDateString();
+        $usuario_id = $request->usuario_id;
+        $tipo_cliente = $request->tipo_cliente;
+
+        $query = Venta::with(['cliente', 'usuario'])
+            ->whereDate('created_at', $fecha);
+
+        if ($usuario_id) {
+            $query->where('usuario_id', $usuario_id);
+        }
+
+        if ($tipo_cliente) {
+            $query->whereHas('cliente', function ($q) use ($tipo_cliente) {
+                $q->where('tipo', $tipo_cliente);
+            });
+        }
+
+        $ventas = $query->orderBy('fecha_venta', 'desc')->get();
+
+        return response()->json([
+            'ventas' => $ventas,
+            'totalEfectivo' => $ventas->where('tipo_pago', 'Efectivo')->sum('total'),
+            'totalTransferencia' => $ventas->where('tipo_pago', 'Transferencia')->sum('total'),
+            'conteoEfectivo' => $ventas->where('tipo_pago', 'Efectivo')->count(),
+            'conteoTransferencia' => $ventas->where('tipo_pago', 'Transferencia')->count(),
+            'totalGeneral' => $ventas->sum('total'),
+        ]);
     }
-
-    $ventas = $query->orderBy('fecha_venta', 'desc')->get();
-
-    return response()->json([
-        'ventas' => $ventas,
-        'totalEfectivo' => $ventas->where('tipo_pago', 'Efectivo')->sum('total'),
-        'totalTransferencia' => $ventas->where('tipo_pago', 'Transferencia')->sum('total'),
-        'conteoEfectivo' => $ventas->where('tipo_pago', 'Efectivo')->count(),
-        'conteoTransferencia' => $ventas->where('tipo_pago', 'Transferencia')->count(),
-        'totalGeneral' => $ventas->sum('total'),
-    ]);
-}
 }
