@@ -174,20 +174,20 @@ class VentasController extends Controller
             ->get();
 
         $clientesAtrasados = Cliente::where('activo', 1)
-            ->whereDoesntHave('ventas', function ($q) use ($hoy) {
-                $q->where('periodo_fin', '>', $hoy);
-            })
+            ->whereHas('ventas')
+            ->whereRaw("
+        (
+            SELECT MAX(periodo_fin)
+            FROM ventas
+            WHERE ventas.cliente_id = clientes.id
+        ) < ?
+    ", [$hoy])
             ->with([
                 'paquete',
                 'ventas' => function ($q) {
                     $q->orderByDesc('periodo_fin')->limit(1);
                 }
             ])
-            ->orderByRaw('
-        (SELECT MAX(periodo_fin)
-         FROM ventas
-         WHERE ventas.cliente_id = clientes.id) IS NULL
-    ')
             ->orderBy(
                 Venta::select('periodo_fin')
                     ->whereColumn('ventas.cliente_id', 'clientes.id')
@@ -196,14 +196,15 @@ class VentasController extends Controller
                 'asc'
             )
             ->paginate(10);
- 
+
+
         if (
             ($clientesPendientesHoy->count() > 0 || $clientesAtrasados->count() > 0)
             && !$request->boolean('forzar_corte')
         ) {
             return view('ventas_corte.index', [
                 'clientesPendientesHoy' => $clientesPendientesHoy,
-                'clientesPendientesAyer' => $clientesAtrasados, // reutilizamos variable
+                'clientesPendientesAyer' => $clientesAtrasados, 
                 'bloquearCorte' => true,
                 'usuarios' => $usuarios,
                 'tiposClientes' => $tiposClientes,

@@ -151,12 +151,29 @@ class ClientesController extends Controller
 
         return redirect()->route('clientes.index')->with('success', 'Cliente y equipo actualizados correctamente.');
     }
+public function destroy($id)
+{
+    $cliente = Cliente::findOrFail($id);
 
-    public function destroy($id)
-    {
-        $cliente = Cliente::findOrFail($id);
-        $cliente->delete();
-
-        return redirect()->route('clientes.index')->with('success', 'Cliente eliminado correctamente.');
+    if ($cliente->ventas()->exists()) {
+        return back()->with(
+            'error',
+            'No se puede eliminar el cliente porque tiene ventas registradas.'
+        );
     }
+
+    $cliente->delete();
+
+    return back()->with('success', 'Cliente eliminado correctamente.');
+}
+
+
+    public function deshabilitar(Cliente $cliente)
+{
+    $cliente->update([
+        'activo' => 0
+    ]);
+
+    return back()->with('success', 'Cliente deshabilitado correctamente.');
+}
 }

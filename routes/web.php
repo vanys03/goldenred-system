@@ -154,7 +154,8 @@ Route::get('/ventas/corte/cerrar', [VentasController::class, 'cerrarCorteHoy'])
 Route::get('/ventas/corte/filtrar', [VentasController::class, 'filtrarCorte'])
     ->name('ventas.corte.filtrar');
 
-
+Route::post('/clientes/{cliente}/deshabilitar', [ClientesController::class, 'deshabilitar'])
+    ->name('clientes.deshabilitar');
      //-------------------------------------------------------------------
     Route::post('/accounts/{account}/change-password', [AccountController::class, 'changePassword'])->name('accounts.changePassword');
 

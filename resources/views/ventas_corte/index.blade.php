@@ -27,7 +27,8 @@
 
                         <div class="modal-body px-4">
                             <p class="text-muted small">
-                                Marca los clientes que **sí realizaron pago por transferencia** antes de cerrar el corte.
+                                Marca los clientes que <strong>sí realizaron pago por transferencia</strong> antes de cerrar
+                                el corte.
                             </p>
 
                             <form method="POST" action="{{ route('ventas.pago.transferencia') }}">
@@ -49,6 +50,7 @@
                                                     <th class="text-center">Último mes pagado</th>
                                                     <th class="text-center">Día de cobro</th>
                                                     <th class="text-center">¿Pagó?</th>
+                                                    <th class="text-center">Acciones</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -72,10 +74,19 @@
                                                                 value="{{ $cliente->id }}"
                                                                 style="cursor:pointer; transform: scale(1.2);">
                                                         </td>
+                                                        <td class="text-center">
+                                                            <form method="POST"
+                                                                action="{{ route('clientes.deshabilitar', $cliente->id) }}">
+                                                                @csrf
+                                                                <button type="submit" class="btn btn-outline-secondary btn-sm"
+                                                                    onclick="return confirm('¿Seguro que deseas deshabilitar a este cliente?')">
+                                                                    <i class="fas fa-user-slash"></i> Deshabilitar
+                                                                </button>
+                                                            </form>
+                                                        </td>
                                                     </tr>
                                                 @endforeach
                                             </tbody>
-
                                         </table>
                                         <div
                                             class="card-footer bg-white border-top-0 d-flex justify-content-between align-items-center py-3">
@@ -103,6 +114,7 @@
                                                     <th>Paquete</th>
                                                     <th class="text-center">Precio</th>
                                                     <th class="text-center">¿Pagó?</th>
+                                                    <th class="text-center">Acciones</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -121,6 +133,16 @@
                                                             <input class="form-check-input" type="checkbox" name="clientes[]"
                                                                 value="{{ $cliente->id }}"
                                                                 style="cursor:pointer; transform: scale(1.2);">
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <form method="POST"
+                                                                action="{{ route('clientes.deshabilitar', $cliente->id) }}">
+                                                                @csrf
+                                                                <button type="submit" class="btn btn-outline-secondary btn-sm"
+                                                                    onclick="return confirm('¿Seguro que deseas deshabilitar a este cliente?')">
+                                                                    <i class="fas fa-user-slash"></i> Deshabilitar
+                                                                </button>
+                                                            </form>
                                                         </td>
                                                     </tr>
                                                 @endforeach
@@ -154,6 +176,7 @@
                 </div>
             </div>
         @endif
+
 
         <div class="card m-4 p-4">
             <form onsubmit="return false;">
