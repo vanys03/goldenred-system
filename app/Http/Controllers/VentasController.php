@@ -68,110 +68,110 @@ class VentasController extends Controller
 
 
 
-public function store(Request $request)
-{
-    $request->validate([
-        'cliente_id' => 'required|exists:clientes,id',
-        'meses' => 'required|integer|min:1|max:12',
-        'descuento' => 'nullable|numeric|min:0',
-        'recargo_domicilio' => 'nullable|numeric|min:0',
-        'tipo_pago' => 'required|in:Efectivo,Transferencia',
-    ]);
+    public function store(Request $request)
+    {
+        $request->validate([
+            'cliente_id' => 'required|exists:clientes,id',
+            'meses' => 'required|integer|min:1|max:12',
+            'descuento' => 'nullable|numeric|min:0',
+            'recargo_domicilio' => 'nullable|numeric|min:0',
+            'tipo_pago' => 'required|in:Efectivo,Transferencia',
+        ]);
 
-    $minutosBloqueo = 5;
+        $minutosBloqueo = 5;
 
-    $ventaReciente = Venta::where('cliente_id', $request->cliente_id)
-        ->where('created_at', '>=', now()->subMinutes($minutosBloqueo))
-        ->exists();
+        $ventaReciente = Venta::where('cliente_id', $request->cliente_id)
+            ->where('created_at', '>=', now()->subMinutes($minutosBloqueo))
+            ->exists();
 
-    if ($ventaReciente) {
-        return redirect()->back()->with(
-            'error',
-            'Este cliente ya tiene un pago registrado recientemente. Espera unos minutos para volver a intentar.'
-        );
-    }
-
-    $cliente = Cliente::with('paquete')->findOrFail($request->cliente_id);
-
-    if (!$cliente->paquete) {
-        return redirect()->back()->with(
-            'error',
-            'Este cliente no tiene paquete asignado.'
-        );
-    }
-    $precioPaquete = $cliente->paquete->precio;
-    $meses = (int) $request->meses;
-
-    $mesesExtra = 0;
-    if ($meses === 6) {
-        $mesesExtra = 1;
-    } elseif ($meses === 12) {
-        $mesesExtra = 2;
-    }
-
-    $mesesTotales = $meses + $mesesExtra;
-    $subtotal = $precioPaquete * $meses;
-    $ultimaVenta = Venta::where('cliente_id', $cliente->id)
-        ->orderBy('fecha_venta', 'desc')
-        ->first();
-
-    [$diasAtraso, $recargoCalculado] = $this->obtenerAtrasoYRecargo($cliente);
-
-    $total = $subtotal
-        - ($request->descuento ?? 0)
-        + ($request->recargo_domicilio ?? 0)
-        + $recargoCalculado;
-
-    $diaCobro = is_numeric($cliente->dia_cobro) ? (int) $cliente->dia_cobro : 1;
-
-    if ($ultimaVenta) {
-        $periodoInicio = Carbon::parse($ultimaVenta->periodo_fin)->startOfDay();
-    } else {
-        $hoy = now()->startOfDay();
-        $proximoCobro = $hoy->copy()->day($diaCobro);
-
-        if ($hoy->day > $diaCobro) {
-            $proximoCobro->addMonthNoOverflow();
+        if ($ventaReciente) {
+            return redirect()->back()->with(
+                'error',
+                'Este cliente ya tiene un pago registrado recientemente. Espera unos minutos para volver a intentar.'
+            );
         }
 
-        $periodoInicio = $proximoCobro;
+        $cliente = Cliente::with('paquete')->findOrFail($request->cliente_id);
+
+        if (!$cliente->paquete) {
+            return redirect()->back()->with(
+                'error',
+                'Este cliente no tiene paquete asignado.'
+            );
+        }
+        $precioPaquete = $cliente->paquete->precio;
+        $meses = (int) $request->meses;
+
+        $mesesExtra = 0;
+        if ($meses === 6) {
+            $mesesExtra = 1;
+        } elseif ($meses === 12) {
+            $mesesExtra = 2;
+        }
+
+        $mesesTotales = $meses + $mesesExtra;
+        $subtotal = $precioPaquete * $meses;
+        $ultimaVenta = Venta::where('cliente_id', $cliente->id)
+            ->orderBy('fecha_venta', 'desc')
+            ->first();
+
+        [$diasAtraso, $recargoCalculado] = $this->obtenerAtrasoYRecargo($cliente);
+
+        $total = $subtotal
+            - ($request->descuento ?? 0)
+            + ($request->recargo_domicilio ?? 0)
+            + $recargoCalculado;
+
+        $diaCobro = is_numeric($cliente->dia_cobro) ? (int) $cliente->dia_cobro : 1;
+
+        if ($ultimaVenta) {
+            $periodoInicio = Carbon::parse($ultimaVenta->periodo_fin)->startOfDay();
+        } else {
+            $hoy = now()->startOfDay();
+            $proximoCobro = $hoy->copy()->day($diaCobro);
+
+            if ($hoy->day > $diaCobro) {
+                $proximoCobro->addMonthNoOverflow();
+            }
+
+            $periodoInicio = $proximoCobro;
+        }
+
+        $periodoFin = $periodoInicio->copy()
+            ->addMonthsNoOverflow($mesesTotales);
+
+        $pagoPeriodoDuplicado = Venta::where('cliente_id', $cliente->id)
+            ->whereDate('periodo_inicio', $periodoInicio)
+            ->whereDate('periodo_fin', $periodoFin)
+            ->exists();
+
+        if ($pagoPeriodoDuplicado) {
+            return redirect()->back()->with(
+                'error',
+                'Ya existe un pago registrado para este mismo periodo.'
+            );
+        }
+
+        $venta = Venta::create([
+            'usuario_id' => Auth::id(),
+            'cliente_id' => $cliente->id,
+            'estado' => 'pagado',
+            'meses' => $meses,
+            'descuento' => $request->descuento ?? 0,
+            'recargo_domicilio' => $request->recargo_domicilio ?? 0,
+            'recargo_atraso' => $recargoCalculado,
+            'fecha_venta' => now(),
+            'subtotal' => $subtotal,
+            'total' => $total,
+            'periodo_inicio' => $periodoInicio,
+            'periodo_fin' => $periodoFin,
+            'tipo_pago' => $request->tipo_pago,
+        ]);
+
+        return redirect()
+            ->route('ventas.index')
+            ->with('venta_id_para_imprimir', $venta->id);
     }
-
-    $periodoFin = $periodoInicio->copy()
-        ->addMonthsNoOverflow($mesesTotales);
-
-    $pagoPeriodoDuplicado = Venta::where('cliente_id', $cliente->id)
-        ->whereDate('periodo_inicio', $periodoInicio)
-        ->whereDate('periodo_fin', $periodoFin)
-        ->exists();
-
-    if ($pagoPeriodoDuplicado) {
-        return redirect()->back()->with(
-            'error',
-            'Ya existe un pago registrado para este mismo periodo.'
-        );
-    }
-
-    $venta = Venta::create([
-        'usuario_id' => Auth::id(),
-        'cliente_id' => $cliente->id,
-        'estado' => 'pagado',
-        'meses' => $meses,
-        'descuento' => $request->descuento ?? 0,
-        'recargo_domicilio' => $request->recargo_domicilio ?? 0,
-        'recargo_atraso' => $recargoCalculado,
-        'fecha_venta' => now(),
-        'subtotal' => $subtotal,
-        'total' => $total,
-        'periodo_inicio' => $periodoInicio,
-        'periodo_fin' => $periodoFin,
-        'tipo_pago' => $request->tipo_pago,
-    ]);
-
-    return redirect()
-        ->route('ventas.index')
-        ->with('venta_id_para_imprimir', $venta->id);
-}
 
     public function historial()
     {
@@ -233,7 +233,7 @@ public function store(Request $request)
         ) {
             return view('ventas_corte.index', [
                 'clientesPendientesHoy' => $clientesPendientesHoy,
-                'clientesPendientesAyer' => $clientesAtrasados, 
+                'clientesPendientesAyer' => $clientesAtrasados,
                 'bloquearCorte' => true,
                 'usuarios' => $usuarios,
                 'tiposClientes' => $tiposClientes,
@@ -279,14 +279,15 @@ public function store(Request $request)
     {
         $hoy = now()->startOfDay();
 
-        $ventaActual = Venta::where('cliente_id', $cliente->id)
-            ->whereMonth('fecha_venta', $hoy->month)
-            ->whereYear('fecha_venta', $hoy->year)
+        $ventaVigente = Venta::where('cliente_id', $cliente->id)
+            ->whereDate('periodo_fin', '>=', $hoy)
+            ->orderByDesc('periodo_fin')
             ->first();
 
-        if ($ventaActual) {
+        if ($ventaVigente) {
             return [0, 0];
         }
+
 
 
         $ultimaVenta = Venta::where('cliente_id', $cliente->id)
@@ -311,10 +312,11 @@ public function store(Request $request)
         $diasAtraso = 0;
         $recargo = 0;
 
-        if ($hoy->greaterThanOrEqualTo($primerDiaAtraso)) {
-            $diasAtraso = $primerDiaAtraso->diffInDays($hoy) + 1;
+        if ($hoy->gt($fechaBase)) {
+            $diasAtraso = $fechaBase->diffInDays($hoy);
             $recargo = $diasAtraso <= 3 ? 40 : 140;
         }
+
 
         return [$diasAtraso, $recargo];
     }
