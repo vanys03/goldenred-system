@@ -295,14 +295,7 @@ class VentasController extends Controller
             ->first();
 
         if (is_null($ultimaVenta)) {
-            $diaCobro = Carbon::createFromDate($hoy->year, $hoy->month, $cliente->dia_cobro)->startOfDay();
-
-            if ($hoy->greaterThan($diaCobro)) {
-                $diasRetraso = $diaCobro->diffInDays($hoy);
-                $recargo = $diasRetraso <= 3 ? 40 : 140;
-                return [$diasRetraso, $recargo];
-            }
-
+            
             return [0, 0];
         }
 

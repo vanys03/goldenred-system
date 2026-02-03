@@ -37,29 +37,64 @@ class Cliente extends Model
         'fecha_contrato' => 'date',
     ];
 
-    public function getEstadoPagoActual()
-    {
-        $hoy = now()->startOfDay();
-        $ultimaVenta = $this->ventas->sortByDesc('fecha_venta')->first();
+   public function getEstadoPagoActual()
+{
+    $hoy = now()->startOfDay();
+    $ultimaVenta = $this->ventas->sortByDesc('fecha_venta')->first();
 
-        if (!$ultimaVenta) {
-            return ['estado' => 'atrasado', 'mensaje' => 'Sin pagos registrados'];
-        }
-
-        $periodoFin = Carbon::parse($ultimaVenta->periodo_fin)->startOfDay();
-        $mesAnio = ucfirst($periodoFin->locale('es')->isoFormat('MMMM [de] YYYY'));
-
-        if ($hoy->lt($periodoFin)) {
-            $diasRestantes = $hoy->diffInDays($periodoFin);
-            if ($diasRestantes <= 5) {
-                return ['estado' => 'proximo', 'mensaje' => "Próximo a pagar. Cubierto hasta {$mesAnio}"];
-            } else {
-                return ['estado' => 'corriente', 'mensaje' => "Al corriente. Pagado hasta {$mesAnio}"];
-            }
-        }
-
-        return ['estado' => 'atrasado', 'mensaje' => "Atrasado. Último mes cubierto: {$mesAnio}"];
+    if (!$ultimaVenta) {
+        return ['estado' => 'atrasado', 'mensaje' => 'Sin pagos registrados'];
     }
+
+    $periodoInicio = Carbon::parse($ultimaVenta->periodo_inicio)->startOfMonth();
+    $periodoFin = Carbon::parse($ultimaVenta->periodo_fin)->endOfMonth()->startOfDay();
+
+    $inicio = ucfirst($periodoInicio->locale('es')->isoFormat('MMMM YYYY'));
+    $fin = ucfirst($periodoFin->locale('es')->isoFormat('MMMM YYYY'));
+
+    if ($periodoFin->lt($hoy->copy()->startOfMonth())) {
+        return [
+            'estado' => 'atrasado',
+            'mensaje' => "Atrasado. Último periodo cubierto: {$inicio} - {$fin}"
+        ];
+    }
+
+    if ($periodoFin->gte($hoy->copy()->endOfMonth())) {
+        return [
+            'estado' => 'corriente',
+            'mensaje' => "Al corriente. Periodo cubierto: {$inicio} - {$fin}"
+        ];
+    }
+
+    $diaCobro = min($this->dia_cobro, $hoy->daysInMonth);
+
+    $fechaCobro = Carbon::create(
+        $hoy->year,
+        $hoy->month,
+        $diaCobro
+    )->startOfDay();
+
+    if ($hoy->lte($fechaCobro)) {
+        $diasRestantes = $hoy->diffInDays($fechaCobro);
+
+        if ($diasRestantes <= 5) {
+            return [
+                'estado' => 'proximo',
+                'mensaje' => "Su pago es hoy Periodo cubierto: {$inicio} - {$fin}"
+            ];
+        }
+
+        return [
+            'estado' => 'corriente',
+            'mensaje' => "Al corriente. Periodo cubierto: {$inicio} - {$fin}"
+        ];
+    }
+
+    return [
+        'estado' => 'atrasado',
+        'mensaje' => "Atrasado. Periodo cubierto: {$inicio} - {$fin}"
+    ];
+}
 
     public function getActivitylogOptions(): LogOptions
     {

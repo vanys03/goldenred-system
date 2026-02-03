@@ -45,7 +45,6 @@ class ClientesController extends Controller
 
     public function store(Request $request)
 {
-    // Asignar tipo B por defecto
     $request->merge(['tipo' => 'B']);
 
     $request->validate([
@@ -64,7 +63,7 @@ class ClientesController extends Controller
         'panel' => 'nullable|string|max:255',
         'activo' => 'nullable|boolean',
         'zona' => 'nullable|string|max:255',
-        'tipo' => 'required|in:A,B,C', // sigue siendo requerido, pero ya lo forzamos a B
+        'tipo' => 'required|in:A,B,C', 
     ]);
 
     $data = $request->all();
@@ -101,7 +100,7 @@ class ClientesController extends Controller
             'panel' => 'nullable|string|max:255',
             'activo' => 'nullable|boolean',
             'zona' => 'nullable|string|max:255',
-            'tipo' => 'required|in:A,B,C', // ✅ nuevo campo
+            'tipo' => 'required|in:A,B,C', 
         ]);
 
         $cliente = Cliente::findOrFail($id);
@@ -122,7 +121,7 @@ class ClientesController extends Controller
             'panel',
             'activo',
             'zona',
-            'tipo', // ✅ nuevo campo
+            'tipo',
         ]));
 
         if ($request->has('equipo')) {

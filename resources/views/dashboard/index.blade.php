@@ -221,7 +221,7 @@
                                                 Teléfono 1</th>
                                             <th class="text-uppercase text-secondary text-xxs font-weight-bolder">
                                                 Teléfono 2</th>
-                                            <th class="text-uppercase text-secondary text-xxs font-weight-bolder">Último
+                                            <th class="text-uppercase text-secondary text-xxs font-weight-bolder">Ultimo
                                                 mes pagado</th>
                                         </tr>
                                     </thead>
@@ -243,7 +243,7 @@
                                         @empty
                                             <tr>
                                                 <td colspan="5" class="text-center text-secondary">Todos los clientes están
-                                                    al corriente ✨</td>
+                                                    al corriente</td>
                                             </tr>
                                         @endforelse
                                     </tbody>

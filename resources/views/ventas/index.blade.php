@@ -17,7 +17,6 @@
                 @endif
                 @csrf
 
-                {{-- Buscar Cliente --}}
                 <div class="mb-3">
                     <label class="form-label fw-bold text-dark">
                         <span class="material-icons-round align-middle me-1">search</span> Buscar Cliente
@@ -28,7 +27,6 @@
                 </div>
 
                 <div id="datosCliente" class="border-top pt-3">
-                    {{-- Información Cliente --}}
                     @if($ventaEditar)
                         <div class="d-flex justify-content-between align-items-center alert alert-warning mb-3">
                             <div>
@@ -71,7 +69,6 @@
                         </div>
                     </div>
 
-                    {{-- Configuración Venta --}}
 
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
@@ -92,14 +89,13 @@
                         <div class="col-md-4">
                             <label class="form-label">Tipo de Pago</label>
                             <select name="tipo_pago" id="tipo_pago" class="form-select border rounded-2 px-2" required>
-                                <option value="">Seleccione...</option>
-                                <option value="Efectivo">Efectivo</option>
+                                <option value="Efectivo" selected>Efectivo</option>
                                 <option value="Transferencia">Transferencia</option>
                             </select>
                         </div>
+
                     </div>
 
-                    {{-- Ajustes --}}
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
                             <label class="form-label">Descuento</label>
@@ -124,7 +120,6 @@
 
                     </div>
 
-                    {{-- Resumen --}}
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Subtotal</label>
@@ -149,7 +144,6 @@
 
         </div>
 
-        <!-- Historial -->
         <div class="card m-4 p-4">
             <h5>Historial de Ventas de Hoy</h5>
 
@@ -242,7 +236,4 @@
             });
         });
     </script>
-
-
-
 </x-layout>
