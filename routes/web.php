@@ -101,6 +101,8 @@ Route::delete('/rentas/{id}',
 
     Route::patch('/account-profiles/{profile}/unassign', [AccountProfileController::class, 'unassign'])
         ->name('account-profiles.unassign');
+    Route::patch('/profiles/{profile}/pin', [AccountProfileController::class, 'updatePin']);
+
     Route::get('/plataformas/historial', [ProfileAssignmentController::class, 'index'])->name('plataformas_historial.index');
     Route::get('/alt-dashboard', DashboardController::class)->name('alt-dashboard');
 

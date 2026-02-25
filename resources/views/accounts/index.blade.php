@@ -93,11 +93,6 @@
                             </div>
 
 
-                            <div class="input-group input-group-outline mb-3">
-                                <label class="form-label">PIN</label>
-                                <input type="number" class="form-control" name="notes" maxlength="6"
-                                    oninput="this.value = this.value.slice(0, 6);" required>
-                            </div>
                         </form>
                     </div>
 
@@ -151,6 +146,7 @@
 
         @include('accounts.partials.scripts')
         @include('accounts.partials.modal-change-password')
+        @include('accounts.partials.modal-add-pin')
     </main>
        
     @if(session('assignment_to_print'))

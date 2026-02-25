@@ -30,7 +30,7 @@ class AccountProfileController extends Controller
             'current_holder' => 'nullable|string|max:100',
             'telefono' => 'nullable|string|max:20',
             'assigned_since' => 'nullable|date',
-            'notes' => 'nullable|string',
+            //'notes' => 'nullable|string',
         ]);
 
         Profile::create($data);
@@ -62,7 +62,7 @@ class AccountProfileController extends Controller
             'current_holder' => 'nullable|string|max:100',
             'telefono' => 'nullable|string|max:20',
             'assigned_since' => 'nullable|date',
-            'notes' => 'nullable|string',
+           // 'notes' => 'nullable|string',
         ]);
 
         $account_profile->update($data);
@@ -104,7 +104,7 @@ class AccountProfileController extends Controller
         'current_holder' => $data['current_holder'],
         'telefono' => $data['telefono'],
         'assigned_since' => $data['assigned_since'],
-        'notes' => $data['notes'],
+        //'notes' => $data['notes'],
     ]);
 
     // Creamos el registro en historial
@@ -115,7 +115,7 @@ class AccountProfileController extends Controller
         'sold_by_user_id' => auth()->id(),
         'type' => 'sale',
         'started_at' => $data['assigned_since'],
-        'notes' => $data['notes'],
+        //'notes' => $data['notes'],
     ]);
 
     // 🔥 Guardar en sesión para imprimir
@@ -151,6 +151,19 @@ class AccountProfileController extends Controller
 
         return redirect()->back()->with('success', 'Perfil desasignado y registrado en historial.');
     }
+    public function updatePin(Request $request, Profile $profile)
+{
+    $request->validate([
+        'notes' => 'required|digits_between:3,6',
+    ]);
+
+    $profile->update([
+        'notes' => $request->notes,
+    ]);
+
+    return back()->with('success', 'PIN actualizado correctamente.');
+}
+
 
 
     public function dataPerfilesOcupados(Request $request)

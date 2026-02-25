@@ -47,7 +47,7 @@
 <div>{{ $assignment->profile->name }}</div>
 
 <div class="bold">PIN</div>
-<div>{{ $assignment->notes ?? '---' }}</div>
+<div>{{ $assignment->profile->notes ?? '---' }}</div>
 
 <div class="line"></div>
 
